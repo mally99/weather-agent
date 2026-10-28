@@ -1,0 +1,32 @@
+name: weather-agent
+
+on:
+  schedule:
+    # 06:30 ישראל = 03:30 UTC (קיץ) / 04:30 UTC (חורף)
+    - cron: "30 3 * * *"
+    - cron: "30 4 * * *"
+    # 21:00 ישראל = 18:00 UTC (קיץ) / 19:00 UTC (חורף)
+    - cron: "0 18 * * *"
+    - cron: "0 19 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "morning / evening (לבדיקה ידנית)"
+        required: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run agent
+        run: npx --yes tsx weather-agent.ts
+        env:
+          WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
+          CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          FORCE_MODE: ${{ github.event.inputs.mode }}
+          # אופציונלי: CITY / LAT / LON
