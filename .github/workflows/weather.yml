@@ -25,8 +25,7 @@ jobs:
       - name: Run agent
         run: npx --yes tsx weather-agent.ts
         env:
-          WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
-          CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           FORCE_MODE: ${{ github.event.inputs.mode }}
           # אופציונלי: CITY / LAT / LON

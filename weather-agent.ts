@@ -1,4 +1,4 @@
-// סוכן מזג אוויר: בודק תחזית (Open-Meteo), מנסח המלצת לבוש, ושולח בוואטסאפ (CallMeBot)
+// סוכן מזג אוויר: בודק תחזית (Open-Meteo), מנסח המלצת לבוש, ושולח התראה לטלפון (ntfy)
 // הרצה: npx tsx weather-agent.ts   (Node 20+)
 
 const TZ = "Asia/Jerusalem";
@@ -6,8 +6,7 @@ const LAT = process.env.LAT ?? "32.0853"; // תל אביב
 const LON = process.env.LON ?? "34.7818";
 const CITY = process.env.CITY ?? "תל אביב";
 
-const PHONE = process.env.WHATSAPP_PHONE; // למשל +972501234567
-const CALLMEBOT_KEY = process.env.CALLMEBOT_APIKEY;
+const NTFY_TOPIC = process.env.NTFY_TOPIC; // שם נושא ארוך וייחודי, למשל maly-weather-8f3k
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY; // אופציונלי
 const FORCE_MODE = process.env.FORCE_MODE as Mode | undefined; // morning | evening
 
@@ -139,13 +138,20 @@ function composeByRules(w: Day, mode: Mode): string {
   ].join("\n");
 }
 
-// --- שליחה בוואטסאפ דרך CallMeBot ---
-async function sendWhatsApp(text: string) {
-  if (!PHONE || !CALLMEBOT_KEY) throw new Error("חסרים WHATSAPP_PHONE / CALLMEBOT_APIKEY");
-  const url = new URL("https://api.callmebot.com/whatsapp.php");
-  url.search = new URLSearchParams({ phone: PHONE, text, apikey: CALLMEBOT_KEY }).toString();
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`CallMeBot: ${res.status} ${await res.text()}`);
+// --- שליחת התראה דרך ntfy ---
+async function sendNotification(text: string, mode: Mode) {
+  if (!NTFY_TOPIC) throw new Error("חסר NTFY_TOPIC");
+  const res = await fetch("https://ntfy.sh", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      topic: NTFY_TOPIC,
+      title: mode === "morning" ? "מזג האוויר להיום" : "מזג האוויר למחר",
+      message: text,
+      tags: [mode === "morning" ? "sunny" : "crescent_moon"],
+    }),
+  });
+  if (!res.ok) throw new Error(`ntfy: ${res.status} ${await res.text()}`);
 }
 
 async function main() {
@@ -157,7 +163,7 @@ async function main() {
   const weather = await getWeather(mode);
   const message = (await composeWithLLM(weather, mode)) ?? composeByRules(weather, mode);
   console.log(message);
-  await sendWhatsApp(message);
+  await sendNotification(message, mode);
 }
 
 main().catch((e) => {
