@@ -26,6 +26,8 @@ jobs:
         run: npx --yes tsx weather-agent.ts
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          NODE_OPTIONS: --dns-result-order=ipv4first
+          SCHEDULE: ${{ github.event.schedule }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           FORCE_MODE: ${{ github.event.inputs.mode }}
           # אופציונלי: CITY / LAT / LON

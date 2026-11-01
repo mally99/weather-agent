@@ -24,8 +24,31 @@ interface Day {
 }
 
 // --- איזה מצב להריץ, לפי שעון ישראל ---
+// הפרש שעון ישראל מ-UTC בדקות כרגע (120 בחורף, 180 בקיץ)
+function israelOffsetMinutes(): number {
+  const tzName = new Intl.DateTimeFormat("en-US", {
+    timeZone: TZ,
+    timeZoneName: "shortOffset",
+  })
+    .formatToParts(new Date())
+    .find((p) => p.type === "timeZoneName")!.value; // למשל "GMT+3"
+  return Number(tzName.replace("GMT", "").replace("+", "")) * 60;
+}
+
 function getMode(): Mode | null {
   if (FORCE_MODE) return FORCE_MODE;
+
+  // הרצה מתוזמנת: קובעים לפי ה-cron שהפעיל אותה, ולא לפי השעה בפועל,
+  // כך שעיכוב של GitHub לא משנה. שעת ה-cron בשעון ישראל חייבת להיות 06:30 או 21:00.
+  const cron = process.env.SCHEDULE; // למשל "0 18 * * *"
+  if (cron) {
+    const [m, h] = cron.trim().split(/\s+/).map(Number);
+    const localMins = (h * 60 + m + israelOffsetMinutes()) % 1440;
+    if (localMins === 6 * 60 + 30) return "morning";
+    if (localMins === 21 * 60) return "evening";
+    return null;
+  }
+
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: TZ,
     hour: "2-digit",
@@ -141,17 +164,31 @@ function composeByRules(w: Day, mode: Mode): string {
 // --- שליחת התראה דרך ntfy ---
 async function sendNotification(text: string, mode: Mode) {
   if (!NTFY_TOPIC) throw new Error("חסר NTFY_TOPIC");
-  const res = await fetch("https://ntfy.sh", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      topic: NTFY_TOPIC,
-      title: mode === "morning" ? "מזג האוויר להיום" : "מזג האוויר למחר",
-      message: text,
-      tags: [mode === "morning" ? "sunny" : "crescent_moon"],
-    }),
+  const body = JSON.stringify({
+    topic: NTFY_TOPIC,
+    title: mode === "morning" ? "מזג האוויר להיום" : "מזג האוויר למחר",
+    message: text,
+    tags: [mode === "morning" ? "sunny" : "crescent_moon"],
   });
-  if (!res.ok) throw new Error(`ntfy: ${res.status} ${await res.text()}`);
+
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try {
+      const res = await fetch("https://ntfy.sh", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (res.ok) return;
+      lastError = new Error(`ntfy: ${res.status} ${await res.text()}`);
+    } catch (e) {
+      lastError = e;
+    }
+    console.warn(`שליחה נכשלה (ניסיון ${attempt}/4), מנסה שוב...`);
+    await new Promise((r) => setTimeout(r, attempt * 3000));
+  }
+  throw lastError;
 }
 
 async function main() {
